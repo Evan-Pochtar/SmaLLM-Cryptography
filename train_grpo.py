@@ -16,7 +16,7 @@ train_dataset = Dataset.from_pandas(df[100:])
 
 # Create prompts for GRPO Training
 def create_prompt(example):
-    example["prompt"] = f"""Two of the letters in the following message have been swapped. Please determine which two letters were swapped and give me the original message. Do not output any explanation or additional text beyond the original message. Here is the message to solve with the two swapped letters: {example["encrypted_text"]}"""
+    example["prompt"] = f"""All letters in the following message have been swapped to encrypt the message. Please determine which pairs of letters were swapped and give me the original unencrypted message. Do not output any explanation or additional text beyond the original message. Here is the message to solve with all of the letters swapped: {example["encrypted_text"]} Original: """
     return example
 train_dataset = train_dataset.map(create_prompt)
 print(train_dataset)
@@ -59,30 +59,32 @@ def reward(completions, **kwargs):
           continue
       # Apply RapidFuzz ratio for all cases (handles different lengths well)
       similarity = fuzz.ratio(completion, text) / 100.0
-      # Add additional penalty for length mismatch
-      length_penalty = max(0, 1 - (abs(len(completion) - len(text)) / max(len(text), 1)))
-      # Combined score is a linear combination of similarity and length_penalty
-      final_score = (similarity * 0.5) + (length_penalty * 0.5)
-      rewards.append(final_score)
+#       # Add additional penalty for length mismatch
+#       length_penalty = max(0, 1 - (abs(len(completion) - len(text)) / max(len(text), 1)))
+#       # Combined score is a linear combination of similarity and length_penalty
+#       final_score = (similarity * 0.5) + (length_penalty * 0.5)
+#       rewards.append(final_score)
+      rewards.append(similarity)
     return rewards
 
-# model = AutoModelForCausalLM.from_pretrained(
-#     "microsoft/Phi-4-mini-instruct",
-#     device_map="auto",
-#     torch_dtype=torch.bfloat16  # since you're using bf16
-# )
-
 training_args = GRPOConfig(
+    num_train_epochs=2,
     output_dir=checkpoint_dir,
     logging_steps=50,
     per_device_train_batch_size=4,  # Decrease this to lower vram usage
     num_generations=4,  # Decrease this to lower vram usage
-    save_strategy="no",  # Do not save checkpoints (saves storage space)
+    save_strategy="steps",          
+    save_steps=500,  
     bf16=True,  # Enable bf16 mixed precision on A100 GPUs
+    report_to="wandb",  # Turn on W&B loggin
 )
 
+# Path to the model directory
+model_dir = '/users/0/brogn002/FOUR_LETTERS_2025-04-13_10-50-32/final_model'
+print(os.listdir(model_dir)) # Verify that the folder exists
+
 trainer = GRPOTrainer(
-    model="Qwen/Qwen2.5-7B-Instruct",
+    model=model_dir,
     reward_funcs=reward,
     args=training_args,
     train_dataset=train_dataset,
